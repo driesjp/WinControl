@@ -1,5 +1,5 @@
-#include "wincontrol.h"
 #define COBJMACROS
+#include "wincontrol.h"
 #include <initguid.h>
 #include <UIAutomation.h>
 #include <stdio.h>
