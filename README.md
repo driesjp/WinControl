@@ -1,4 +1,4 @@
-# WinControl: Comprehensive Automation Toolkit
+# WinControl: Automation Tool
 
 WinControl is a scriptable tool for automating Windows applications. It allows you to control windows, simulate user interactions, and log automation processes.
 
