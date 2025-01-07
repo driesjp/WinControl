@@ -82,12 +82,12 @@ LogError "Error message"
 EndLog
 ```
 ## Future Enhancements
-Test control: Implement pass/fail reporting
-Offset clicking: Add support for offset clicks relative to an element
-Process identifier support: Improve process attachment by PID
-Automatic logging: Enable automatic function logging
-Exception handling: Enhance error handling in both scripts and code
-Code refactoring: Simplify and beautify the script syntax
+Test control: Implement pass/fail reporting</br >
+Offset clicking: Add support for offset clicks relative to an element</br >
+Process identifier support: Further implement process attachment by PID</br >
+Automatic logging: Enable automatic function logging</br >
+Exception handling: Enhance error handling in both scripts and code</br >
+Code refactoring: Simplify and beautify the code
 
 ## Requirements
 Windows 10 or 11 SDK is required for compiling
