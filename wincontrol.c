@@ -676,160 +676,169 @@ const char* winctrl_get_variable(WinControlContext* ctx, const char* name) {
     return NULL;
 }
 
-bool winctrl_execute_command(WinControlContext* ctx, const Command* cmd) {
-    printf("Executing command: %s with %d parameters\n", cmd->name, cmd->param_count);
-    for(int i = 0; i < cmd->param_count; i++) {
-        printf("Parameter %d: '%s'\n", i, cmd->params[i]);
-    }
+#include <stdio.h>
+#include <stdbool.h>
+#include <string.h>
 
-    if (strcmp(cmd->name, "Click") == 0 && cmd->param_count == 2) {
-        winctrl_click(atoi(cmd->params[0]), atoi(cmd->params[1]));
-        return true;
-    }
-    else if (strcmp(cmd->name, "SendKeystroke") == 0 && cmd->param_count == 1) {
-        const char* text_to_send;
-        if (cmd->params[0][0] == '$') {
-            // If parameter starts with $, look up the variable value
-            text_to_send = winctrl_get_variable(ctx, cmd->params[0] + 1);  // Skip the $
-            if (!text_to_send) {
-                sprintf_s(ctx->last_error, sizeof(ctx->last_error),
-                    "Variable not found: %s", cmd->params[0] + 1);
-                return false;
-            }
-        } else {
-            // Use the parameter directly if it's not a variable
-            text_to_send = cmd->params[0];
-        }
-        printf("Sending keystroke: %s\n", text_to_send);
-        winctrl_send_keys(ctx, text_to_send);
-        return true;
-    }
-    else if (strcmp(cmd->name, "StartLog") == 0 && cmd->param_count == 1) {
-        return winctrl_start_logging(ctx, cmd->params[0]);
-    }
-    else if (strcmp(cmd->name, "Log") == 0 && cmd->param_count == 1) {
-        winctrl_log(ctx, LOG_NORMAL, cmd->params[0]);
-        return true;
-    }
-    else if (strcmp(cmd->name, "LogWarning") == 0 && cmd->param_count == 1) {
-        winctrl_log(ctx, LOG_WARNING, cmd->params[0]);
-        return true;
-    }
-    else if (strcmp(cmd->name, "LogError") == 0 && cmd->param_count == 1) {
-        winctrl_log(ctx, LOG_ERROR, cmd->params[0]);
-        return true;
-    }
-    else if (strcmp(cmd->name, "LogHeader") == 0 && cmd->param_count == 1) {
-        winctrl_log(ctx, LOG_HEADER, cmd->params[0]);
-        return true;
-    }
-    else if (strcmp(cmd->name, "EndLog") == 0) {
-        winctrl_end_logging(ctx);
-        return true;
-    }
-    else if (strcmp(cmd->name, "Sleep") == 0 && cmd->param_count == 1) {
-        int ms = atoi(cmd->params[0]);
-        printf("Sleeping for %d ms\n", ms);
-        winctrl_sleep(ms);
-        return true;
-    }
-    else if (strcmp(cmd->name, "AttachProcess") == 0 && cmd->param_count == 1) {
-        printf("Attaching to process: %s\n", cmd->params[0]);
-        return winctrl_attach_process(ctx, cmd->params[0]);
-    }
-    else if (strcmp(cmd->name, "BringToFront") == 0) {
-        printf("Bringing window to front\n");
-        return winctrl_bring_to_front(ctx);
-    }
-    else if (strcmp(cmd->name, "RightClick") == 0 && cmd->param_count == 2) {
-        winctrl_right_click_coordinates(atoi(cmd->params[0]), atoi(cmd->params[1]));
-        return true;
-    }
-    else if (strcmp(cmd->name, "DoubleClick") == 0 && cmd->param_count == 2) {
-        winctrl_double_click_coordinates(atoi(cmd->params[0]), atoi(cmd->params[1]));
-        return true;
-    }
-    else if (strcmp(cmd->name, "ContainsElementText") == 0 && cmd->param_count == 4) {
-        ElementProperties props;
-        props.automation_id = cmd->params[0];
-        props.class_name = cmd->params[1];
-        props.control_type = atoi(cmd->params[2]);
+// Command handler function type
+typedef bool (*CommandHandler)(WinControlContext* ctx, const Command* cmd);
 
-        // Get element text
-        char element_text[256] = {0};
-        if (!winctrl_get_element_text_by_properties(ctx, &props, element_text, sizeof(element_text))) {
-            sprintf_s(ctx->last_error, sizeof(ctx->last_error), "Could not get element text");
+// Command handlers
+static bool handle_click(WinControlContext* ctx, const Command* cmd) {
+    winctrl_click(atoi(cmd->params[0]), atoi(cmd->params[1]));
+    return true;
+}
+
+static bool handle_send_keystroke(WinControlContext* ctx, const Command* cmd) {
+    const char* text_to_send;
+    if (cmd->params[0][0] == '$') {
+        text_to_send = winctrl_get_variable(ctx, cmd->params[0] + 1);
+        if (!text_to_send) {
+            sprintf_s(ctx->last_error, sizeof(ctx->last_error),
+                "Variable not found: %s", cmd->params[0] + 1);
             return false;
         }
-
-        // Get comparison text (either direct or from variable)
-        const char* search_text;
-        if (cmd->params[3][0] == '$') {
-            search_text = winctrl_get_variable(ctx, cmd->params[3] + 1);
-            if (!search_text) {
-                sprintf_s(ctx->last_error, sizeof(ctx->last_error),
-                    "Variable not found: %s", cmd->params[3] + 1);
-                return false;
-            }
-        } else {
-            search_text = cmd->params[3];
-        }
-
-        // Check if element_text contains search_text
-        bool contains = (strstr(element_text, search_text) != NULL);
-        winctrl_set_variable(ctx, "_CONTAINS_RESULT", contains ? "true" : "false");
-
-        printf("Checking if element text '%s' contains '%s': %s\n",
-            element_text, search_text, contains ? "yes" : "no");
-
-        return true;
+    } else {
+        text_to_send = cmd->params[0];
     }
-    else if (strcmp(cmd->name, "RightClickElementByProperties") == 0 && cmd->param_count == 3) {
-        ElementProperties props;
-        props.automation_id = strcmp(cmd->params[0], "null") == 0 ? NULL : cmd->params[0];
-        props.class_name = strcmp(cmd->params[1], "null") == 0 ? NULL : cmd->params[1];
-        props.control_type = atoi(cmd->params[2]);
+    printf("Sending keystroke: %s\n", text_to_send);
+    winctrl_send_keys(ctx, text_to_send);
+    return true;
+}
 
-        IUIAutomationElement* element = NULL;
-        if (winctrl_find_element_by_properties(ctx, &props, &element)) {
-            printf("Found element, right-clicking...\n");
-            bool clicked = winctrl_right_click_element(element);
-            element->lpVtbl->Release(element);
-            return clicked;
-        }
+static bool handle_start_log(WinControlContext* ctx, const Command* cmd) {
+    return winctrl_start_logging(ctx, cmd->params[0]);
+}
+
+static bool handle_log(WinControlContext* ctx, const Command* cmd) {
+    winctrl_log(ctx, LOG_NORMAL, cmd->params[0]);
+    return true;
+}
+
+static bool handle_log_warning(WinControlContext* ctx, const Command* cmd) {
+    winctrl_log(ctx, LOG_WARNING, cmd->params[0]);
+    return true;
+}
+
+static bool handle_log_error(WinControlContext* ctx, const Command* cmd) {
+    winctrl_log(ctx, LOG_ERROR, cmd->params[0]);
+    return true;
+}
+
+static bool handle_log_header(WinControlContext* ctx, const Command* cmd) {
+    winctrl_log(ctx, LOG_HEADER, cmd->params[0]);
+    return true;
+}
+
+static bool handle_end_log(WinControlContext* ctx, const Command* cmd) {
+    winctrl_end_logging(ctx);
+    return true;
+}
+
+static bool handle_sleep(WinControlContext* ctx, const Command* cmd) {
+    int ms = atoi(cmd->params[0]);
+    printf("Sleeping for %d ms\n", ms);
+    winctrl_sleep(ms);
+    return true;
+}
+
+static bool handle_attach_process(WinControlContext* ctx, const Command* cmd) {
+    printf("Attaching to process: %s\n", cmd->params[0]);
+    return winctrl_attach_process(ctx, cmd->params[0]);
+}
+
+static bool handle_bring_to_front(WinControlContext* ctx, const Command* cmd) {
+    printf("Bringing window to front\n");
+    return winctrl_bring_to_front(ctx);
+}
+
+static bool handle_right_click(WinControlContext* ctx, const Command* cmd) {
+    winctrl_right_click_coordinates(atoi(cmd->params[0]), atoi(cmd->params[1]));
+    return true;
+}
+
+static bool handle_double_click(WinControlContext* ctx, const Command* cmd) {
+    winctrl_double_click_coordinates(atoi(cmd->params[0]), atoi(cmd->params[1]));
+    return true;
+}
+
+static bool handle_contains_element_text(WinControlContext* ctx, const Command* cmd) {
+    ElementProperties props;
+    props.automation_id = cmd->params[0];
+    props.class_name = cmd->params[1];
+    props.control_type = atoi(cmd->params[2]);
+
+    char element_text[256] = {0};
+    if (!winctrl_get_element_text_by_properties(ctx, &props, element_text, sizeof(element_text))) {
+        sprintf_s(ctx->last_error, sizeof(ctx->last_error), "Could not get element text");
         return false;
     }
-    else if (strcmp(cmd->name, "DoubleClickElementByProperties") == 0 && cmd->param_count == 3) {
-        ElementProperties props;
-        props.automation_id = strcmp(cmd->params[0], "null") == 0 ? NULL : cmd->params[0];
-        props.class_name = strcmp(cmd->params[1], "null") == 0 ? NULL : cmd->params[1];
-        props.control_type = atoi(cmd->params[2]);
 
-        IUIAutomationElement* element = NULL;
-        if (winctrl_find_element_by_properties(ctx, &props, &element)) {
-            printf("Found element, double-clicking...\n");
-            bool clicked = winctrl_double_click_element(element);
-            element->lpVtbl->Release(element);
-            return clicked;
+    const char* search_text;
+    if (cmd->params[3][0] == '$') {
+        search_text = winctrl_get_variable(ctx, cmd->params[3] + 1);
+        if (!search_text) {
+            sprintf_s(ctx->last_error, sizeof(ctx->last_error),
+                "Variable not found: %s", cmd->params[3] + 1);
+            return false;
         }
-        return false;
+    } else {
+        search_text = cmd->params[3];
     }
-    else if (strcmp(cmd->name, "SendModKey") == 0 && cmd->param_count == 2) {
+
+    bool contains = (strstr(element_text, search_text) != NULL);
+    winctrl_set_variable(ctx, "_CONTAINS_RESULT", contains ? "true" : "false");
+
+    printf("Checking if element text '%s' contains '%s': %s\n",
+        element_text, search_text, contains ? "yes" : "no");
+
+    return true;
+}
+
+static bool handle_right_click_element(WinControlContext* ctx, const Command* cmd) {
+    ElementProperties props;
+    props.automation_id = strcmp(cmd->params[0], "null") == 0 ? NULL : cmd->params[0];
+    props.class_name = strcmp(cmd->params[1], "null") == 0 ? NULL : cmd->params[1];
+    props.control_type = atoi(cmd->params[2]);
+
+    IUIAutomationElement* element = NULL;
+    if (winctrl_find_element_by_properties(ctx, &props, &element)) {
+        printf("Found element, right-clicking...\n");
+        bool clicked = winctrl_right_click_element(element);
+        element->lpVtbl->Release(element);
+        return clicked;
+    }
+    return false;
+}
+
+static bool handle_double_click_element(WinControlContext* ctx, const Command* cmd) {
+    ElementProperties props;
+    props.automation_id = strcmp(cmd->params[0], "null") == 0 ? NULL : cmd->params[0];
+    props.class_name = strcmp(cmd->params[1], "null") == 0 ? NULL : cmd->params[1];
+    props.control_type = atoi(cmd->params[2]);
+
+    IUIAutomationElement* element = NULL;
+    if (winctrl_find_element_by_properties(ctx, &props, &element)) {
+        printf("Found element, double-clicking...\n");
+        bool clicked = winctrl_double_click_element(element);
+        element->lpVtbl->Release(element);
+        return clicked;
+    }
+    return false;
+}
+
+static bool handle_send_mod_key(WinControlContext* ctx, const Command* cmd) {
     WinModifierKeys mod = WMOD_NONE;
     WORD key = 0;
 
-    // Parse modifier
     if (strcmp(cmd->params[0], "CTRL") == 0) mod = WMOD_CTRL;
     else if (strcmp(cmd->params[0], "ALT") == 0) mod = WMOD_ALT;
     else if (strcmp(cmd->params[0], "SHIFT") == 0) mod = WMOD_SHIFT;
     else if (strcmp(cmd->params[0], "WIN") == 0) mod = WMOD_WIN;
 
-    // Parse key
     if (strlen(cmd->params[1]) == 1) {
         key = VkKeyScanEx(cmd->params[1][0], GetKeyboardLayout(0)) & 0xFF;
-    }
-    else {
-        // Handle special keys
+    } else {
         if (strcmp(cmd->params[1], "TAB") == 0) key = VK_TAB;
         else if (strcmp(cmd->params[1], "ENTER") == 0) key = VK_RETURN;
         else if (strcmp(cmd->params[1], "ESC") == 0) key = VK_ESCAPE;
@@ -845,96 +854,56 @@ bool winctrl_execute_command(WinControlContext* ctx, const Command* cmd) {
         "Invalid key combination: %s + %s", cmd->params[0], cmd->params[1]);
     return false;
 }
-    else if (strcmp(cmd->name, "SET") == 0 && cmd->param_count == 2) {
-        return winctrl_set_variable(ctx, cmd->params[0], cmd->params[1]);
-    }
-    else if (strcmp(cmd->name, "IF") == 0 && cmd->param_count >= 1) {
-        // Combine all parameters after "ElementExists" into condition
-        char condition[512] = {0};
-        strncpy_s(condition, sizeof(condition), cmd->params[0], _TRUNCATE);
-        for (int i = 1; i < cmd->param_count; i++) {
-            strncat_s(condition, sizeof(condition), " ", _TRUNCATE);
-            strncat_s(condition, sizeof(condition), cmd->params[i], _TRUNCATE);
-        }
-        printf("Evaluating condition: %s\n", condition);
-        bool condition_met = evaluate_condition(ctx, condition);
-        winctrl_set_variable(ctx, "_IF_CONDITION", condition_met ? "true" : "false");
-        return true;
-    }
-    else if (strcmp(cmd->name, "ENDIF") == 0) {
-        winctrl_set_variable(ctx, "_IF_CONDITION", "true");  // Reset condition
-        return true;
-    }
-    else if (strcmp(cmd->name, "SetDelay") == 0 && cmd->param_count == 1) {
-        ctx->typing_delay_ms = atoi(cmd->params[0]);
-        return true;
-    }
-else if (strcmp(cmd->name, "SendMultiModKey") == 0 && cmd->param_count >= 2) {
-    printf("Executing SendMultiModKey with %d parameters\n", cmd->param_count);
-    for(int i = 0; i < cmd->param_count; i++) {
-        printf("Parameter %d: '%s'\n", i, cmd->params[i]);
-    }
 
+static bool handle_set(WinControlContext* ctx, const Command* cmd) {
+    return winctrl_set_variable(ctx, cmd->params[0], cmd->params[1]);
+}
+
+static bool handle_if(WinControlContext* ctx, const Command* cmd) {
+    char condition[512] = {0};
+    strncpy_s(condition, sizeof(condition), cmd->params[0], _TRUNCATE);
+    for (int i = 1; i < cmd->param_count; i++) {
+        strncat_s(condition, sizeof(condition), " ", _TRUNCATE);
+        strncat_s(condition, sizeof(condition), cmd->params[i], _TRUNCATE);
+    }
+    printf("Evaluating condition: %s\n", condition);
+    bool condition_met = evaluate_condition(ctx, condition);
+    winctrl_set_variable(ctx, "_IF_CONDITION", condition_met ? "true" : "false");
+    return true;
+}
+
+static bool handle_endif(WinControlContext* ctx, const Command* cmd) {
+    winctrl_set_variable(ctx, "_IF_CONDITION", "true");
+    return true;
+}
+
+static bool handle_set_delay(WinControlContext* ctx, const Command* cmd) {
+    ctx->typing_delay_ms = atoi(cmd->params[0]);
+    return true;
+}
+
+static bool handle_send_multi_mod_key(WinControlContext* ctx, const Command* cmd) {
     WinModifierKeys mods = WMOD_NONE;
-
-    // Parse all modifiers except last parameter
     for (int i = 0; i < cmd->param_count - 1; i++) {
-        printf("Parsing modifier: %s\n", cmd->params[i]);
-        if (strcmp(cmd->params[i], "CTRL") == 0) {
-            mods |= WMOD_CTRL;
-            printf("Added CTRL modifier\n");
-        }
-        else if (strcmp(cmd->params[i], "ALT") == 0) {
-            mods |= WMOD_ALT;
-            printf("Added ALT modifier\n");
-        }
-        else if (strcmp(cmd->params[i], "SHIFT") == 0) {
-            mods |= WMOD_SHIFT;
-            printf("Added SHIFT modifier\n");
-        }
-        else if (strcmp(cmd->params[i], "WIN") == 0) {
-            mods |= WMOD_WIN;
-            printf("Added WIN modifier\n");
-        }
-        else {
-            printf("Unknown modifier: %s\n", cmd->params[i]);
-        }
+        if (strcmp(cmd->params[i], "CTRL") == 0) mods |= WMOD_CTRL;
+        else if (strcmp(cmd->params[i], "ALT") == 0) mods |= WMOD_ALT;
+        else if (strcmp(cmd->params[i], "SHIFT") == 0) mods |= WMOD_SHIFT;
+        else if (strcmp(cmd->params[i], "WIN") == 0) mods |= WMOD_WIN;
     }
 
-    // Last parameter is the key
     WORD key = 0;
     const char* keyStr = cmd->params[cmd->param_count - 1];
-    printf("Parsing key: %s\n", keyStr);
 
     if (strlen(keyStr) == 1) {
         key = VkKeyScanEx(keyStr[0], GetKeyboardLayout(0)) & 0xFF;
-        printf("Single character key code: %d\n", key);
-    }
-    else {
-        // Handle special keys
-        if (strcmp(keyStr, "TAB") == 0) {
-            key = VK_TAB;
-            printf("Special key TAB\n");
-        }
-        else if (strcmp(keyStr, "ENTER") == 0) {
-            key = VK_RETURN;
-            printf("Special key ENTER\n");
-        }
-        else if (strcmp(keyStr, "ESC") == 0) {
-            key = VK_ESCAPE;
-            printf("Special key ESC\n");
-        }
-        else if (strcmp(keyStr, "DELETE") == 0) {
-            key = VK_DELETE;
-            printf("Special key DELETE (0x%X)\n", key);
-        }
-        else {
-            printf("Unknown special key: %s\n", keyStr);
-        }
+    } else {
+        if (strcmp(keyStr, "TAB") == 0) key = VK_TAB;
+        else if (strcmp(keyStr, "ENTER") == 0) key = VK_RETURN;
+        else if (strcmp(keyStr, "ESC") == 0) key = VK_ESCAPE;
+        else if (strcmp(keyStr, "DELETE") == 0) key = VK_DELETE;
     }
 
     if (key != 0) {
-        printf("Sending multi-modified key (mods: %d, key: %d)\n", mods, key);
         winctrl_send_keys_with_modifier(mods, key);
         return true;
     }
@@ -943,32 +912,81 @@ else if (strcmp(cmd->name, "SendMultiModKey") == 0 && cmd->param_count >= 2) {
         "Invalid key combination. Modifiers: %d, Key: %s", mods, keyStr);
     return false;
 }
-    else if (strcmp(cmd->name, "ClickElementByProperties") == 0 && cmd->param_count == 3) {
-        ElementProperties props;
-        props.automation_id = strcmp(cmd->params[0], "null") == 0 ? NULL : cmd->params[0];
-        props.class_name = strcmp(cmd->params[1], "null") == 0 ? NULL : cmd->params[1];
-        props.control_type = atoi(cmd->params[2]);
 
-        printf("Finding element with properties:\n");
-        printf("  AutomationId: %s\n", props.automation_id ? props.automation_id : "not specified");
-        printf("  ClassName: %s\n", props.class_name ? props.class_name : "not specified");
-        printf("  ControlType: %d\n", props.control_type);
+static bool handle_click_element(WinControlContext* ctx, const Command* cmd) {
+    ElementProperties props;
+    props.automation_id = strcmp(cmd->params[0], "null") == 0 ? NULL : cmd->params[0];
+    props.class_name = strcmp(cmd->params[1], "null") == 0 ? NULL : cmd->params[1];
+    props.control_type = atoi(cmd->params[2]);
 
-        IUIAutomationElement* element = NULL;
-        if (winctrl_find_element_by_properties(ctx, &props, &element)) {
-            printf("Found element, clicking...\n");
-            bool clicked = winctrl_click_element(element);
-            element->lpVtbl->Release(element);
-            return clicked;
-        }
-
-        sprintf_s(ctx->last_error, sizeof(ctx->last_error),
-            "Could not find element with specified properties");
-        return false;
+    IUIAutomationElement* element = NULL;
+    if (winctrl_find_element_by_properties(ctx, &props, &element)) {
+        printf("Found element, clicking...\n");
+        bool clicked = winctrl_click_element(element);
+        element->lpVtbl->Release(element);
+        return clicked;
     }
 
     sprintf_s(ctx->last_error, sizeof(ctx->last_error),
-        "Unknown command or invalid parameters: %s", cmd->name);
+        "Could not find element with specified properties");
+    return false;
+}
+
+// Command definition structure
+typedef struct {
+    const char* name;
+    int param_count;
+    CommandHandler handler;
+} CommandDefinition;
+
+// Command lookup table
+static const CommandDefinition COMMAND_TABLE[] = {
+    {"Click", 2, handle_click},
+    {"SendKeystroke", 1, handle_send_keystroke},
+    {"StartLog", 1, handle_start_log},
+    {"Log", 1, handle_log},
+    {"LogWarning", 1, handle_log_warning},
+    {"LogError", 1, handle_log_error},
+    {"LogHeader", 1, handle_log_header},
+    {"EndLog", 0, handle_end_log},
+    {"Sleep", 1, handle_sleep},
+    {"AttachProcess", 1, handle_attach_process},
+    {"BringToFront", 0, handle_bring_to_front},
+    {"RightClick", 2, handle_right_click},
+    {"DoubleClick", 2, handle_double_click},
+    {"ContainsElementText", 4, handle_contains_element_text},
+    {"RightClickElementByProperties", 3, handle_right_click_element},
+    {"DoubleClickElementByProperties", 3, handle_double_click_element},
+    {"SendModKey", 2, handle_send_mod_key},
+    {"SET", 2, handle_set},
+    {"IF", -1, handle_if},  // -1 indicates variable parameter count
+    {"ENDIF", 0, handle_endif},
+    {"SetDelay", 1, handle_set_delay},
+    {"SendMultiModKey", -1, handle_send_multi_mod_key},
+    {"ClickElementByProperties", 3, handle_click_element},
+    {NULL, 0, NULL}  // Sentinel
+};
+
+bool winctrl_execute_command(WinControlContext* ctx, const Command* cmd) {
+    printf("Executing command: %s with %d parameters\n", cmd->name, cmd->param_count);
+    for(int i = 0; i < cmd->param_count; i++) {
+        printf("Parameter %d: '%s'\n", i, cmd->params[i]);
+    }
+
+    for (const CommandDefinition* def = COMMAND_TABLE; def->name != NULL; def++) {
+        if (strcmp(cmd->name, def->name) == 0) {
+            if (def->param_count != -1 && cmd->param_count != def->param_count) {
+                sprintf_s(ctx->last_error, sizeof(ctx->last_error),
+                    "Invalid parameter count for %s: expected %d, got %d",
+                    cmd->name, def->param_count, cmd->param_count);
+                return false;
+            }
+            return def->handler(ctx, cmd);
+        }
+    }
+
+    sprintf_s(ctx->last_error, sizeof(ctx->last_error),
+        "Unknown command: %s", cmd->name);
     return false;
 }
 
